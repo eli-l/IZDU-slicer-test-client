@@ -55,12 +55,6 @@ func processResponse(serviceUrl, imageUrl string, scale int64) (time.Duration, i
 		rcvdChunk, err := res.Body.Read(b)
 		response = append(response, b[:rcvdChunk]...)
 		receivedTotal += rcvdChunk
-		//for i, item := range b {
-		//	if i > rcvdChunk {
-		//		break
-		//	}
-		//	fmt.Printf("%d ", item)
-		//}
 		if err == io.EOF {
 			break
 		}
