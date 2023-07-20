@@ -4,6 +4,6 @@ WORKDIR /app
 
 COPY . .
 
-RUN go build -o hello
+RUN go build -o izdu-client
 
-CMD ["/app/hello"]
+ENTRYPOINT ["/app/izdu-client"]

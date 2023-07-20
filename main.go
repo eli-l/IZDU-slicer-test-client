@@ -6,8 +6,10 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -15,62 +17,70 @@ import (
 TODO: Move logic to separate functions
 */
 func main() {
-	service_url := os.Args[1]
-	image_url := os.Args[2]
-
-	if service_url == "" || image_url == "" {
-		panic("Please pass service URL as first arg and image URL as second arg")
+	if len(os.Args) < 4 {
+		log.Fatal("Pass service url, image url and scale(px) as arguments")
 	}
 
+	serviceUrl := os.Args[1]
+	imageUrl := os.Args[2]
+	scale := os.Args[3]
+	scaleInt, err := strconv.ParseInt(scale, 10, 32)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	responseTime, count := processResponse(serviceUrl, imageUrl, scaleInt)
+	log.Println(
+		fmt.Sprintf("Summary:\r\n Response: %s\r\n Image count: %d",
+			responseTime,
+			count))
+}
+
+func processResponse(serviceUrl, imageUrl string, scale int64) (time.Duration, int) {
 	start := time.Now()
-	res, err := http.Post(service_url,
+	res, err := http.Post(
+		fmt.Sprintf("%s/?scale=%d", serviceUrl, scale),
 		"application/json",
-		bytes.NewBuffer([]byte(`{"image_url": "`+image_url+`"}`)))
+		bytes.NewBuffer([]byte(`{"image_url": "`+imageUrl+`"}`)))
 	if err != nil {
 		panic(err)
 	}
 
+	responseTime := time.Since(start)
 	defer res.Body.Close()
-	fmt.Println(fmt.Sprintf("Response time: %s", time.Since(start)))
-
-	var rcvd_total int
-	var response = make([]byte, 1200*1200*3*4)
+	var receivedTotal int
+	var response = make([]byte, 0)
 	for {
 		b := make([]byte, 1200*1200*3)
-		rcvd_chunk, err := res.Body.Read(b)
-		rcvd_total += rcvd_chunk
+		rcvdChunk, err := res.Body.Read(b)
+		response = append(response, b[:rcvdChunk]...)
+		receivedTotal += rcvdChunk
 		if err == io.EOF {
 			break
 		}
 		if err != nil && err != io.EOF {
 			panic(err)
 		}
-		response = append(response, b[:rcvd_chunk]...)
 	}
-	fmt.Println(fmt.Sprintf("Received bytes: %d", rcvd_total))
+	log.Println(fmt.Sprintf("Received bytes: %d", receivedTotal))
 
-	var count = 0
+	var processedCount = 0
 	for {
 		index := bytes.LastIndex(response, []byte{0x89, 0x50, 0x4E, 0x47})
-		fmt.Println(fmt.Sprintf("Index: %d", index))
 		if index < 0 {
 			break
 		}
-
-		if count > 3 {
-			fmt.Println("Fuse!")
-			break
+		if processedCount > 10 {
+			log.Fatal("Fuse!")
 		}
 
-		rdr := bytes.NewReader(response[index:])
-		img, format, err := image.Decode(rdr)
-		_ = format
+		r := bytes.NewReader(response[index:])
+		img, _, err := image.Decode(r)
 		if err != nil {
-			fmt.Println(err)
-			break
+			log.Fatal(err)
 		}
 
-		out, err := os.Create(fmt.Sprintf("%d.png", count))
+		out, err := os.Create(fmt.Sprintf("%d.png", processedCount))
 		if err != nil {
 			panic(err)
 		}
@@ -79,11 +89,12 @@ func main() {
 			panic(err)
 		}
 		response = response[:index]
-		//
-		count++
+		processedCount++
 	}
 
-	fmt.Println(fmt.Sprintf("Received chunks: %d", count))
+	if processedCount == 0 {
+		log.Printf("No images received. Response: %s\n", response[:receivedTotal])
+	}
 
-	fmt.Println(fmt.Sprintf("Total time: %s", time.Since(start)))
+	return responseTime, processedCount
 }
